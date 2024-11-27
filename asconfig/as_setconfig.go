@@ -8,8 +8,8 @@ import (
 	"github.com/go-logr/logr"
 
 	aero "github.com/aerospike/aerospike-client-go/v7"
-	"github.com/aerospike/aerospike-management-lib/deployment"
-	"github.com/aerospike/aerospike-management-lib/info"
+	"github.com/tanmayja/aerospike-management-lib/deployment"
+	"github.com/tanmayja/aerospike-management-lib/info"
 )
 
 const (

@@ -13,7 +13,7 @@ import (
 	sets "github.com/deckarep/golang-set/v2"
 	"github.com/go-logr/logr"
 
-	"github.com/aerospike/aerospike-management-lib/info"
+	"github.com/tanmayja/aerospike-management-lib/info"
 )
 
 // map of version to schema

@@ -10,7 +10,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	aero "github.com/aerospike/aerospike-client-go/v7"
-	lib "github.com/aerospike/aerospike-management-lib"
+	lib "github.com/tanmayja/aerospike-management-lib"
 )
 
 type AsParserTestSuite struct {

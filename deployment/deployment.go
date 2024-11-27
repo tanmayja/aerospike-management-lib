@@ -8,7 +8,7 @@ import (
 	"github.com/go-logr/logr"
 
 	aero "github.com/aerospike/aerospike-client-go/v7"
-	"github.com/aerospike/aerospike-management-lib/info"
+	"github.com/tanmayja/aerospike-management-lib/info"
 )
 
 // HostConn has all parameters to connect to an aerospike host and the machine.

@@ -8,7 +8,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	aero "github.com/aerospike/aerospike-client-go/v7"
-	"github.com/aerospike/aerospike-management-lib/deployment"
+	"github.com/tanmayja/aerospike-management-lib/deployment"
 )
 
 type AsSetConfigTestSuite struct {

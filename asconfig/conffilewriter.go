@@ -17,7 +17,7 @@ import (
 	sets "github.com/deckarep/golang-set/v2"
 	"github.com/go-logr/logr"
 
-	lib "github.com/aerospike/aerospike-management-lib"
+	lib "github.com/tanmayja/aerospike-management-lib"
 )
 
 const (

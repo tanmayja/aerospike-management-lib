@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	lib "github.com/aerospike/aerospike-management-lib"
-	"github.com/aerospike/aerospike-management-lib/info"
 	"github.com/go-logr/logr"
+	lib "github.com/tanmayja/aerospike-management-lib"
+	"github.com/tanmayja/aerospike-management-lib/info"
 )
 
 const (

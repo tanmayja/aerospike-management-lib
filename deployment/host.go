@@ -6,7 +6,7 @@ import (
 	"github.com/go-logr/logr"
 
 	aero "github.com/aerospike/aerospike-client-go/v7"
-	"github.com/aerospike/aerospike-management-lib/info"
+	"github.com/tanmayja/aerospike-management-lib/info"
 )
 
 // host is a system on which the aerospike server is running. It provides aerospike

@@ -3,7 +3,7 @@ package asconfig
 import (
 	"fmt"
 
-	lib "github.com/aerospike/aerospike-management-lib"
+	lib "github.com/tanmayja/aerospike-management-lib"
 )
 
 // Metadata for restriction check

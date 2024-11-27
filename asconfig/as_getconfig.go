@@ -8,9 +8,9 @@ import (
 	"github.com/go-logr/logr"
 
 	aero "github.com/aerospike/aerospike-client-go/v7"
-	lib "github.com/aerospike/aerospike-management-lib"
-	"github.com/aerospike/aerospike-management-lib/deployment"
-	"github.com/aerospike/aerospike-management-lib/info"
+	lib "github.com/tanmayja/aerospike-management-lib"
+	"github.com/tanmayja/aerospike-management-lib/deployment"
+	"github.com/tanmayja/aerospike-management-lib/info"
 )
 
 // GetASConfig returns the value of the given path from the aerospike config from given host.

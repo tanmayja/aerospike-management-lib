@@ -15,7 +15,7 @@ import (
 
 	aero "github.com/aerospike/aerospike-client-go/v7"
 	ast "github.com/aerospike/aerospike-client-go/v7/types"
-	lib "github.com/aerospike/aerospike-management-lib"
+	lib "github.com/tanmayja/aerospike-management-lib"
 )
 
 type ClusterAsStat = lib.Stats

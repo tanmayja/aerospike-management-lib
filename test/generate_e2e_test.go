@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	aero "github.com/aerospike/aerospike-client-go/v7"
-	"github.com/aerospike/aerospike-management-lib/asconfig"
-	"github.com/aerospike/aerospike-management-lib/info"
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/suite"
+	"github.com/tanmayja/aerospike-management-lib/asconfig"
+	"github.com/tanmayja/aerospike-management-lib/info"
 )
 
 type GenerateE2eTestSuite struct {

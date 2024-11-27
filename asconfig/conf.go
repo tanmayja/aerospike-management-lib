@@ -9,7 +9,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/xeipuuv/gojsonschema"
 
-	lib "github.com/aerospike/aerospike-management-lib"
+	lib "github.com/tanmayja/aerospike-management-lib"
 )
 
 // Conf is format for configs
