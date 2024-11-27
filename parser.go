@@ -15,6 +15,21 @@ func NewInfoParser(s string) *InfoParser {
 	return &InfoParser{bufio.NewReader(strings.NewReader(s))}
 }
 
+// PeekAndExpect checks if the expected value is present without advancing the reader
+func (ip *InfoParser) PeekAndExpect(s string) error {
+	bytes, err := ip.Peek(len(s))
+	if err != nil {
+		return err
+	}
+
+	v := string(bytes)
+	if v != s {
+		return fmt.Errorf("InfoParser: Wrong value. Peek expected %s, but found %s", s, v)
+	}
+
+	return nil
+}
+
 func (ip *InfoParser) Expect(s string) error {
 	buf := make([]byte, len(s))
 	if _, err := ip.Read(buf); err != nil {

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -34,45 +33,37 @@ var ErrConnNotAuthenticated = fmt.Errorf("connection not authenticated")
 
 // ASInfo top level map keys
 const (
-	ConstStat     = "statistics" // stat
-	ConstConfigs  = "configs"    // configs
-	ConstLatency  = "latency"    // latency
-	ConstMetadata = "metadata"   // metadata
+	ConstStat      = "statistics" // stat
+	ConstConfigs   = "configs"    // configs
+	ConstLatencies = "latencies"  // latencies
+	ConstMetadata  = "metadata"   // metadata
 )
 
 const (
-	DefaultTimeout = 2 * time.Second
-
 	// Explicit constants are defined with `const` prefix when
 	// 1. string values which are not commands
 	// 2. string values which are used to generate other commands
 	// 3. string values which are both command and constant
-	constStatXDRPre50 = "statistics/xdr" // StatXdr
-	constStatXDR      = "get-stats:context=xdr"
-	constStatNS       = "namespace/" // StatNamespace
-	constStatDCpre50  = "dc/"        // statDC
-	constStatDC       = "get-stats:context=xdr;dc="
-	constStatSet      = "sets/"      // StatSets
-	constStatBin      = "bins/"      // StatBins
-	constStatSIndex   = "sindex/"    // StatSindex
-	constStatNSNames  = "namespaces" // StatNamespaces
-	constStatDCNames  = "dcs"        // StatDcs need dc names
-	constStatLogIDs   = "logs"       // StatLogs need logging id
+	constStatNS      = "namespace/" // StatNamespace
+	constStatDC      = "get-stats:context=xdr;dc="
+	constStatSet     = "sets/"      // StatSets
+	constStatBin     = "bins/"      // StatBins
+	constStatSIndex  = "sindex/"    // StatSindex
+	constStatNSNames = "namespaces" // StatNamespaces
+	constStatDCNames = "dcs"        // StatDcs need dc names
+	constStatLogIDs  = "logs"       // StatLogs need logging id
 
 	cmdConfigNetwork   = "get-config:context=network"       // ConfigNetwork
 	cmdConfigService   = "get-config:context=service"       // ConfigService
 	cmdConfigNamespace = "get-config:context=namespace;id=" // ConfigNamespace
 	cmdConfigXDR       = "get-config:context=xdr"           // ConfigXDR
 	cmdConfigSecurity  = "get-config:context=security"      // ConfigSecurity
-	cmdConfigDCPre50   = "get-dc-config:context=dc;dc="     // ConfigDC
 	cmdConfigDC        = "get-config:context=xdr;dc="       // ConfigDC
 	cmdConfigMESH      = "mesh"                             // ConfigMesh
 	cmdConfigRacks     = "racks:"                           // configRacks
 	cmdConfigLogging   = "log/"                             // ConfigLog
 
-	cmdLatency      = "latency:"
-	constThroughput = "throughput"
-	cmdThroughput   = "throughput:"
+	cmdLatencies = "latencies:"
 
 	cmdMetaBuild             = "build"              // Build
 	cmdMetaVersion           = "version"            // Version
@@ -126,7 +117,7 @@ const (
 )
 
 var asCmds = []string{
-	ConstStat, ConstConfigs, ConstMetadata, ConstLatency, constThroughput,
+	ConstStat, ConstConfigs, ConstMetadata, ConstLatencies,
 }
 
 var networkTLSNameRe = regexp.MustCompile(`^tls\[(\d+)].name$`)
@@ -314,7 +305,7 @@ func (info *AsInfo) Close() error {
 // *******************************************************************************************
 
 // GetAsInfo function fetch and parse data for given commands from given host
-// Input: cmdList - Options [statistics, configs, metadata, latency, throughput]
+// Input: cmdList - Options [statistics, configs, metadata, latencies]
 func (info *AsInfo) GetAsInfo(cmdList ...string) (NodeAsStats, error) {
 	// These info will be used for creating other info commands
 	//  statNSNames, statDCNames, statSIndex, statLogIDS
@@ -417,7 +408,19 @@ func ParseNamespaceNames(m map[string]string) []string {
 
 // ParseDCNames parses all DC names
 func ParseDCNames(m map[string]string) []string {
-	return getNames(m[constStatDCNames])
+	rawXDRConfig, exists := m[cmdConfigXDR]
+	if !exists || rawXDRConfig == "" {
+		return []string{}
+	}
+
+	xdrConfig := ParseIntoMap(rawXDRConfig, ";", "=")
+
+	rawNames, ok := xdrConfig[constStatDCNames].(string)
+	if !ok || rawNames == "" {
+		return []string{}
+	}
+
+	return strings.Split(rawNames, ",")
 }
 
 // ParseTLSNames parses all TLS names
@@ -467,7 +470,7 @@ func ParseSetNames(m map[string]string, ns string) []string {
 
 func (info *AsInfo) getCoreInfo() (map[string]string, error) {
 	m, err := info.RequestInfo(
-		constStatNSNames, constStatDCNames, constStatSIndex, constStatLogIDs, cmdMetaBuild,
+		constStatNSNames, cmdConfigXDR, constStatSIndex, constStatLogIDs, cmdMetaBuild,
 	)
 	if err != nil {
 		return nil, err
@@ -496,10 +499,8 @@ func (info *AsInfo) createCmdList(
 		case ConstMetadata:
 			cmds := info.createMetaCmdList()
 			rawCmdList = append(rawCmdList, cmds...)
-		case ConstLatency:
-			rawCmdList = append(rawCmdList, cmdLatency)
-		case constThroughput:
-			rawCmdList = append(rawCmdList, cmdThroughput)
+		case ConstLatencies:
+			rawCmdList = append(rawCmdList, cmdLatencies)
 
 		default:
 			info.log.V(1).Info("Invalid cmd to parse asinfo", "command", cmd)
@@ -510,14 +511,18 @@ func (info *AsInfo) createCmdList(
 }
 
 func (info *AsInfo) createStatCmdList(m map[string]string) []string {
-	cmdList := []string{ConstStat, constStatXDRPre50, constStatNSNames, constStatDCNames}
+	cmdList := []string{ConstStat, cmdConfigXDR, constStatNSNames}
 
 	nsNames := getNames(m[constStatNSNames])
 	for _, ns := range nsNames {
 		// namespace, sets, bins, sindex
 		cmdList = append(
-			cmdList, constStatNS+ns, constStatSet+ns, constStatBin+ns, constStatSIndex+ns,
+			cmdList, constStatNS+ns, constStatSet+ns, constStatSIndex+ns,
 		)
+
+		if r, _ := lib.CompareVersions(m[cmdMetaBuild], "7.0"); r == -1 {
+			cmdList = append(cmdList, constStatBin+ns)
+		}
 
 		indexNames := sindexNames(m[constStatSIndex], ns)
 		for _, index := range indexNames {
@@ -569,21 +574,13 @@ func (info *AsInfo) createConfigCmdList(
 			)
 
 		case ConfigXDRContext:
-			xdrCmdList, err := info.createXDRConfigCmdList(m[cmdMetaBuild], m)
-
+			xdrCmdList, err := info.createXDRConfigCmdList(m)
 			if err != nil {
 				// TODO: log?
 				return nil, err
 			}
 
 			cmdList = append(cmdList, xdrCmdList...)
-
-		// Pre 4.9 Only. Post 4.9 all DC configs are in xdr context.
-		case ConfigDCContext:
-			cmdList = append(
-				cmdList,
-				info.createDCConfigCmdListPre49(m[cmdMetaBuild], ParseDCNames(m)...)...,
-			)
 
 		case ConfigSecurityContext:
 			cmdList = append(cmdList, cmdConfigSecurity)
@@ -629,35 +626,16 @@ func (info *AsInfo) createSetConfigCmdList(nsNames ...string) []string {
 	return cmdList
 }
 
-func (info *AsInfo) createXDRConfigCmdList(build string, m map[string]string) ([]string, error) {
-	if r, _ := lib.CompareVersions(build, "5.0"); r == -1 {
-		return []string{cmdConfigXDR}, nil
-	}
-
+func (info *AsInfo) createXDRConfigCmdList(m map[string]string) ([]string, error) {
 	cmdList := make([]string, 0, 1)
-	resp, err := info.doInfo(cmdConfigXDR)
 
+	resp, err := info.doInfo(cmdConfigXDR)
 	if err != nil {
 		return nil, err
 	}
 
-	var dcNames []string
-
 	m = mergeDicts(m, resp)
-	rawXDRConfig := resp[cmdConfigXDR]
-	xdrConfig := ParseIntoMap(rawXDRConfig, ";", "=")
-	rawNames, ok := xdrConfig[constStatDCNames].(string)
-
-	if ok {
-		if rawNames == "" {
-			dcNames = []string{}
-		} else {
-			dcNames = strings.Split(rawNames, ",")
-		}
-	} else {
-		dcNames = []string{}
-	}
-
+	dcNames := ParseDCNames(m)
 	results := make(chan error, len(dcNames))
 
 	var (
@@ -722,21 +700,6 @@ func (info *AsInfo) createDCNamespaceConfigCmdList(dc string, namespaces ...stri
 
 	for _, ns := range namespaces {
 		cmdList = append(cmdList, cmdConfigDC+dc+";namespace="+ns)
-	}
-
-	return cmdList
-}
-
-// createDCConfigCmdList creates get-config command for DC
-func (info *AsInfo) createDCConfigCmdListPre49(build string, dcNames ...string) []string {
-	if r, _ := lib.CompareVersions(build, "5.0"); r != -1 {
-		return nil
-	}
-
-	cmdList := make([]string, 0, len(dcNames))
-
-	for _, dc := range dcNames {
-		cmdList = append(cmdList, cmdConfigDCPre50+dc)
 	}
 
 	return cmdList
@@ -855,10 +818,8 @@ func parseCmdResults(
 			asMap[cmd] = parseConfigInfo(rawMap)
 		case ConstMetadata:
 			asMap[cmd] = parseMetadataInfo(rawMap)
-		case ConstLatency:
-			asMap[cmd] = parseLatencyInfo(log, rawMap[cmdLatency])
-		case constThroughput:
-			asMap[cmd] = parseThroughputInfo(rawMap[cmdThroughput])
+		case ConstLatencies:
+			asMap[cmd] = parseLatencyInfo(log, rawMap[cmdLatencies], 0)
 
 		default:
 			log.V(1).Info("Invalid cmd to parse asinfo", "command", cmd)
@@ -919,7 +880,6 @@ func parseStatInfo(rawMap map[string]string) lib.Stats {
 	statMap := make(lib.Stats)
 
 	statMap["service"] = parseBasicInfo(rawMap[ConstStat])
-	statMap["xdr"] = parseBasicInfo(rawMap[constStatXDR])
 	statMap["dc"] = parseAllDcStats(rawMap)
 	statMap["namespace"] = parseAllNsStats(rawMap)
 
@@ -929,10 +889,10 @@ func parseStatInfo(rawMap map[string]string) lib.Stats {
 // AllDCStats returns statistics of all dc's on the host.
 func parseAllDcStats(rawMap map[string]string) lib.Stats {
 	dcStats := make(lib.Stats)
-	dcNames := getNames(rawMap[constStatDCNames])
+	dcNames := ParseDCNames(rawMap)
 
 	for _, dc := range dcNames {
-		newCmd := constStatDC + "/" + dc
+		newCmd := constStatDC + dc
 		s := parseBasicInfo(rawMap[newCmd])
 		dcStats[dc] = s
 	}
@@ -948,8 +908,11 @@ func parseAllNsStats(rawMap map[string]string) lib.Stats {
 		m := make(lib.Stats)
 		m["service"] = parseStatNsInfo(rawMap[constStatNS+ns])
 		m["set"] = parseStatSetsInfo(rawMap[constStatSet+ns])
-		m["bin"] = parseStatBinsInfo(rawMap[constStatBin+ns])
 		m["sindex"] = parseStatSindexsInfo(rawMap, ns)
+
+		if r, _ := lib.CompareVersions(rawMap[cmdMetaBuild], "7.0"); r == -1 {
+			m["bin"] = parseStatBinsInfo(rawMap[constStatBin+ns])
+		}
 
 		nsStatMap[ns] = m
 	}
@@ -1031,23 +994,10 @@ func parseConfigInfo(rawMap map[string]string) lib.Stats {
 		configMap[ConfigNamespaceContext] = nsc
 	}
 
-	var xc lib.Stats
-	if r, _ := lib.CompareVersions(rawMap[cmdMetaBuild], "5.0"); r == -1 {
-		xc = parseBasicConfigInfo(rawMap[cmdConfigXDR], "=")
-	} else {
-		xc = parseAllXDRConfig(rawMap, cmdConfigXDR)
-	}
+	xc := parseAllXDRConfig(rawMap, cmdConfigXDR)
 
 	if len(xc) > 0 {
 		configMap[ConfigXDRContext] = xc
-	}
-
-	if r, _ := lib.CompareVersions(rawMap[cmdMetaBuild], "5.0"); r == -1 {
-		// Pre 5.0 Only. 5.0 and later all DC configs are nested in xdr context.
-		dcc := parseAllDcConfig(rawMap, cmdConfigDCPre50)
-		if len(dcc) > 0 {
-			configMap[ConfigDCContext] = dcc
-		}
 	}
 
 	sec := parseBasicConfigInfo(rawMap[cmdConfigSecurity], "=")
@@ -1247,247 +1197,286 @@ func parseListTypeMetaInfo(rawMap map[string]string, cmd string) []string {
 	return l
 }
 
-// ***************************************************************************
-// parse latency and throughput
-func parseThroughputInfo(rawStr string) lib.Stats {
-	ip := lib.NewInfoParser(rawStr)
-
-	// typical format is {test}-read:15:43:18-GMT,ops/sec;15:43:28,0.0;
-	nodeStats := lib.Stats{}
+// Parse "latencies:" info output
+//
+// Format (with and without latency data)
+// {test}-write:msec,4234.9,28.75,7.40,1.63,0.26,0.03,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00;
+// {test}-read:;
+func parseLatencyInfo(log logr.Logger, s string, latencyBucketsCount int) map[string]lib.Stats {
+	ip := lib.NewInfoParser(s)
 	res := map[string]lib.Stats{}
 
 	for {
-		if err := ip.Expect("{"); err != nil {
-			// it's an error string, read to next section
-			if _, err := ip.ReadUntil(';'); err != nil {
-				break
-			}
+		namespaceName, operation, err := readNamespaceAndOperation(ip)
 
+		if err != nil {
+			break
+		}
+
+		if namespaceName == "" && operation == "" {
 			continue
 		}
 
-		ns, err := ip.ReadUntil('}')
-		if err != nil {
-			break
-		}
-
-		if err = ip.Expect("-"); err != nil {
-			break
-		}
-
-		op, err := ip.ReadUntil(':')
-		if err != nil {
-			break
-		}
-		// first timestamp
-		if _, err = ip.ReadUntil(','); err != nil {
-			break
-		}
-		// ops/sec
-		if _, err = ip.ReadUntil(';'); err != nil {
-			break
-		}
-		// second timestamp
-		if _, err = ip.ReadUntil(','); err != nil {
-			break
-		}
-
-		opsCount, err := ip.ReadFloat(';')
-		if err != nil {
-			break
-		}
-
-		if res[ns] == nil {
-			res[ns] = lib.Stats{
-				op: opsCount,
-			}
-		} else {
-			res[ns][op] = opsCount
-		}
-	}
-	// TODO Cross-check with khosrow, was it double accounting. for latency also
-	// calc totals
-	for _, mp := range res {
-		for op, tps := range mp {
-			// nodeStats[op] is interface{} type, so will be nil at start.
-			if nodeStats[op] == nil {
-				nodeStats[op] = float64(0)
-			}
-
-			nodeStats[op] = nodeStats[op].(float64) + tps.(float64)
-		}
-	}
-
-	throughputMap := make(lib.Stats)
-	newNodeStats := make(lib.Stats)
-	newRes := make(lib.Stats)
-
-	for k, v := range nodeStats {
-		newNodeStats[k] = v
-	}
-
-	for k, v := range res {
-		newRes[k] = v
-	}
-
-	throughputMap["namespace"] = newRes
-	throughputMap["total"] = newNodeStats
-
-	return throughputMap
-}
-
-// TODO: check diff lat bucket in agg
-// typical format is {test}-read:10:17:37-GMT,ops/sec,>1ms,>8ms,>64ms;10:17:47,29648.2,3.44,0.08,0.00;
-func parseLatencyInfo(log logr.Logger, rawStr string) lib.Stats {
-	ip := lib.NewInfoParser(rawStr)
-	nodeStats := make(map[string]lib.Stats)
-	res := make(map[string]lib.Stats)
-
-	for {
-		if err := ip.Expect("{"); err != nil {
-			// it's an error string, read to next section
-			if _, err := ip.ReadUntil(';'); err != nil {
+		// Might be an empty output due to no latency data available, so continue to next section
+		if err := ip.PeekAndExpect(";"); err == nil {
+			if err := ip.Expect(";"); err != nil {
 				break
 			}
-
 			continue
 		}
 
-		ns, err := ip.ReadUntil('}')
+		// Get time unit - msec or usec
+		timeUnit, err := ip.ReadUntil(',')
 		if err != nil {
 			break
 		}
 
-		if err = ip.Expect("-"); err != nil {
-			break
-		}
+		// Simplify time unit for use in metric name
+		timeUnit = strings.TrimSuffix(timeUnit, "ec")
 
-		op, err := ip.ReadUntil(':')
-		if err != nil {
-			break
-		}
-
-		timestamp, err := ip.ReadUntil(',')
-		if err != nil {
-			break
-		}
-
-		if _, err = ip.ReadUntil(','); err != nil {
-			break
-		}
-
-		bucketsStr, err := ip.ReadUntil(';')
-		if err != nil {
-			break
-		}
-
-		buckets := strings.Split(bucketsStr, ",")
-
-		_, err = ip.ReadUntil(',')
-		if err != nil {
-			break
-		}
-
-		opsCount, err := ip.ReadFloat(',')
-		if err != nil {
-			break
-		}
-
-		valBucketsStr, err := ip.ReadUntil(';')
+		// Read bucket values
+		bucketValuesStr, err := ip.ReadUntil(';')
 		if err != nil && err != io.EOF {
 			break
 		}
+		bucketValues := strings.Split(bucketValuesStr, ",")
 
-		valBuckets := strings.Split(valBucketsStr, ",")
-		valBucketsFloat := make([]float64, len(valBuckets))
+		// Set bucket labels and bucket values.
+		// Convert percentage to exact ops count and compute 'less than or equal to' bucket values for Prometheus histograms.
+		// Consider only non-zero buckets and the first zero bucket (since we are converting to 'less than or equal to' buckets)
+		bucketValuesFloat := make([]float64, 1)
+		bucketLabels := make([]string, 1)
 
-		for i := range valBuckets {
-			valBucketsFloat[i], _ = strconv.ParseFloat(valBuckets[i], 64)
-		}
-		// calc precise in-between percents
-		lineAggPct := float64(0)
-		for i := len(valBucketsFloat) - 1; i > 0; i-- {
-			lineAggPct += valBucketsFloat[i]
-			valBucketsFloat[i-1] = math.Max(0, valBucketsFloat[i-1]-lineAggPct)
-		}
-
-		if len(buckets) != len(valBuckets) {
-			log.Error(fmt.Errorf("parsing latency values"), "buckets not equal")
+		bucketLabels[0] = "+Inf"
+		bucketValuesFloat[0], err = strconv.ParseFloat(bucketValues[0], 64)
+		if err != nil {
+			log.Error(err, "Error parsing latency values")
 			break
 		}
 
-		for i := range valBucketsFloat {
-			valBucketsFloat[i] *= opsCount
+		for i := 1; i < len(bucketValues); i++ {
+			val, err := strconv.ParseFloat(bucketValues[i], 64)
+			if err != nil {
+				log.Error(err, "Error parsing latency values")
+				break
+			}
+
+			v := bucketValuesFloat[0] - ((val * bucketValuesFloat[0]) / 100)
+
+			bucketLabels = append(bucketLabels, strconv.Itoa(1<<(i-1)))
+			bucketValuesFloat = append(bucketValuesFloat, v)
+
+			if latencyBucketsCount > 0 && i >= latencyBucketsCount {
+				// latency buckets count limit reached
+				break
+			}
+		}
+
+		// Sanity check
+		if len(bucketLabels) != len(bucketValuesFloat) {
+			log.Error(fmt.Errorf("error parsing latency values"), "Bucket mismatch: buckets: `%v`, values: `%v`", bucketLabels, bucketValuesFloat)
+			break
 		}
 
 		stats := lib.Stats{
-			"tps":        opsCount,
-			"buckets":    buckets,
-			"valBuckets": valBucketsFloat,
-			"timestamp":  timestamp,
+			"bucketLabels": bucketLabels,
+			"bucketValues": bucketValuesFloat,
+			"timeUnit":     timeUnit,
 		}
-		topct(stats)
 
-		if res[ns] == nil {
-			res[ns] = lib.Stats{
-				op: stats,
+		if res[namespaceName] == nil {
+			res[namespaceName] = lib.Stats{
+				operation: stats,
 			}
 		} else {
-			res[ns][op] = stats
-		}
-
-		// calc totals
-		if nstats := nodeStats[op]; nstats == nil {
-			nodeStats[op] = stats
-		} else {
-			// make a copy, since it is referred in nodeStats
-			nstats = _cloneLatency(nstats)
-
-			if timestamp > nstats.TryString("timestamp", "") {
-				nstats["timestamp"] = timestamp
-			}
-
-			nstats["tps"] = nstats.TryFloat("tps", 0) + opsCount
-
-			nBuckets := nstats["buckets"].([]string)
-			if len(buckets) > len(nBuckets) {
-				nstats["buckets"] = append(nBuckets, buckets[len(nBuckets):]...)
-				nstats["valBuckets"] = append(
-					nstats["valBuckets"].([]float64),
-					make([]float64, len(buckets[len(nBuckets):]))...,
-				)
-			}
-
-			nValBuckets := nstats["valBuckets"].([]float64)
-			for i := range buckets {
-				nValBuckets[i] += valBucketsFloat[i]
-			}
-
-			nstats["valBuckets"] = nValBuckets
-			nodeStats[op] = nstats
+			res[namespaceName][operation] = stats
 		}
 	}
 
-	latencyMap := make(lib.Stats)
-	newNodeStats := make(lib.Stats)
-	newRes := make(lib.Stats)
-
-	for k, v := range nodeStats {
-		newNodeStats[k] = v
-	}
-
-	for k, v := range res {
-		newRes[k] = v
-	}
-
-	// Transform before returning
-	tNsLat := transformNsLatency(newRes)
-	tNodeLat := transformNodeLatency(newNodeStats)
-	latencyMap["namespace"] = tNsLat
-	latencyMap["total"] = tNodeLat
-
-	return latencyMap
+	return res
 }
+
+func readNamespaceAndOperation(ip *lib.InfoParser) (string, string, error) {
+	if err := ip.PeekAndExpect("batch-index"); err == nil {
+		operation, err := ip.ReadUntil(':')
+		return "", operation, err
+	}
+
+	if err := ip.Expect("{"); err != nil {
+		if _, err := ip.ReadUntil(';'); err != nil {
+			return "", "", err
+		}
+		return "", "", nil
+	}
+
+	// Get namespace name
+	namespaceName, err := ip.ReadUntil('}')
+	if err != nil {
+		return "", "", err
+	}
+
+	if err := ip.Expect("-"); err != nil {
+		return "", "", err
+	}
+
+	// Get operation (read, write etc.)
+	operation, err := ip.ReadUntil(':')
+	if err != nil {
+		return "", "", err
+	}
+	return namespaceName, operation, err
+}
+
+//func parseLatencyInfo(log logr.Logger, rawStr string) lib.Stats {
+//	ip := lib.NewInfoParser(rawStr)
+//	nodeStats := make(map[string]lib.Stats)
+//	res := make(map[string]lib.Stats)
+//
+//	for {
+//		if err := ip.Expect("{"); err != nil {
+//			// it's an error string, read to next section
+//			if _, err := ip.ReadUntil(';'); err != nil {
+//				break
+//			}
+//
+//			continue
+//		}
+//
+//		ns, err := ip.ReadUntil('}')
+//		if err != nil {
+//			break
+//		}
+//
+//		if err = ip.Expect("-"); err != nil {
+//			break
+//		}
+//
+//		op, err := ip.ReadUntil(':')
+//		if err != nil {
+//			break
+//		}
+//
+//		timestamp, err := ip.ReadUntil(',')
+//		if err != nil {
+//			break
+//		}
+//
+//		if _, err = ip.ReadUntil(','); err != nil {
+//			break
+//		}
+//
+//		bucketsStr, err := ip.ReadUntil(';')
+//		if err != nil {
+//			break
+//		}
+//
+//		buckets := strings.Split(bucketsStr, ",")
+//
+//		_, err = ip.ReadUntil(',')
+//		if err != nil {
+//			break
+//		}
+//
+//		opsCount, err := ip.ReadFloat(',')
+//		if err != nil {
+//			break
+//		}
+//
+//		valBucketsStr, err := ip.ReadUntil(';')
+//		if err != nil && err != io.EOF {
+//			break
+//		}
+//
+//		valBuckets := strings.Split(valBucketsStr, ",")
+//		valBucketsFloat := make([]float64, len(valBuckets))
+//
+//		for i := range valBuckets {
+//			valBucketsFloat[i], _ = strconv.ParseFloat(valBuckets[i], 64)
+//		}
+//		// calc precise in-between percents
+//		lineAggPct := float64(0)
+//		for i := len(valBucketsFloat) - 1; i > 0; i-- {
+//			lineAggPct += valBucketsFloat[i]
+//			valBucketsFloat[i-1] = math.Max(0, valBucketsFloat[i-1]-lineAggPct)
+//		}
+//
+//		if len(buckets) != len(valBuckets) {
+//			log.Error(fmt.Errorf("parsing latency values"), "buckets not equal")
+//			break
+//		}
+//
+//		for i := range valBucketsFloat {
+//			valBucketsFloat[i] *= opsCount
+//		}
+//
+//		stats := lib.Stats{
+//			"tps":        opsCount,
+//			"buckets":    buckets,
+//			"valBuckets": valBucketsFloat,
+//			"timestamp":  timestamp,
+//		}
+//		topct(stats)
+//
+//		if res[ns] == nil {
+//			res[ns] = lib.Stats{
+//				op: stats,
+//			}
+//		} else {
+//			res[ns][op] = stats
+//		}
+//
+//		// calc totals
+//		if nstats := nodeStats[op]; nstats == nil {
+//			nodeStats[op] = stats
+//		} else {
+//			// make a copy, since it is referred in nodeStats
+//			nstats = _cloneLatency(nstats)
+//
+//			if timestamp > nstats.TryString("timestamp", "") {
+//				nstats["timestamp"] = timestamp
+//			}
+//
+//			nstats["tps"] = nstats.TryFloat("tps", 0) + opsCount
+//
+//			nBuckets := nstats["buckets"].([]string)
+//			if len(buckets) > len(nBuckets) {
+//				nstats["buckets"] = append(nBuckets, buckets[len(nBuckets):]...)
+//				nstats["valBuckets"] = append(
+//					nstats["valBuckets"].([]float64),
+//					make([]float64, len(buckets[len(nBuckets):]))...,
+//				)
+//			}
+//
+//			nValBuckets := nstats["valBuckets"].([]float64)
+//			for i := range buckets {
+//				nValBuckets[i] += valBucketsFloat[i]
+//			}
+//
+//			nstats["valBuckets"] = nValBuckets
+//			nodeStats[op] = nstats
+//		}
+//	}
+//
+//	latencyMap := make(lib.Stats)
+//	newNodeStats := make(lib.Stats)
+//	newRes := make(lib.Stats)
+//
+//	for k, v := range nodeStats {
+//		newNodeStats[k] = v
+//	}
+//
+//	for k, v := range res {
+//		newRes[k] = v
+//	}
+//
+//	// Transform before returning
+//	tNsLat := transformNsLatency(newRes)
+//	tNodeLat := transformNodeLatency(newNodeStats)
+//	latencyMap["namespace"] = tNsLat
+//	latencyMap["total"] = tNodeLat
+//
+//	return latencyMap
+//}
 
 func transformNsLatency(lat lib.Stats) lib.Stats {
 	newNs := lib.Stats{}
